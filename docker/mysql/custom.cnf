@@ -1,0 +1,42 @@
+# ============================================================================
+# MySQL 8.0 Custom Configuration - WordPress Production
+# ============================================================================
+# Tuned for a VPS with 2GB+ RAM. Adjust innodb_buffer_pool_size for your server.
+# ============================================================================
+
+[mysqld]
+# ── Character Set ──────────────────────────────────────────────────────────
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# ── InnoDB Performance ────────────────────────────────────────────────────
+# Adjust based on available RAM (rule of thumb: 50-70% of available RAM for DB)
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+innodb_flush_method = O_DIRECT
+innodb_flush_log_at_trx_commit = 2
+innodb_file_per_table = 1
+
+# ── Networking ─────────────────────────────────────────────────────────────
+skip-name-resolve
+max_connections = 100
+wait_timeout = 600
+interactive_timeout = 600
+
+# ── Slow Query Log ────────────────────────────────────────────────────────
+slow_query_log = 1
+long_query_time = 2
+
+# ── Security ──────────────────────────────────────────────────────────────
+local-infile = 0
+symbolic-links = 0
+
+# ── Logging ────────────────────────────────────────────────────────────────
+log_error_verbosity = 2
+
+# ── Temporary Tables ──────────────────────────────────────────────────────
+tmp_table_size = 64M
+max_heap_table_size = 64M
+
+[client]
+default-character-set = utf8mb4
