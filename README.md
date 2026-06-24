@@ -1,198 +1,201 @@
 # WordPress Docker Infrastructure
 
-Infraestructura Docker lista para producción para WordPress, diseñada para desplegarse en un VPS con **Nginx Proxy Manager**.
+Production-ready Docker infrastructure for WordPress, designed to be deployed on a VPS alongside **Nginx Proxy Manager** (NPM).
 
-## Arquitectura
+## Architecture
 
 ```
 Internet → NPM (SSL/Domain) → Nginx → WordPress (PHP-FPM) → MySQL 8.0
                                                             → Redis 7
 ```
 
-| Contenedor | Imagen | Puerto | Healthcheck |
+| Container | Image | Port | Healthcheck |
 |---|---|---|---|
-| `{project}-nginx` | `nginx:1.27-alpine` | 80 (interno) | `wget /nginx-health` |
-| `{project}-php` | Custom WordPress + Redis | 9000 (interno) | `cgi-fcgi ping` |
-| `{project}-db` | `mysql:8.0` | 3306 (interno) | `mysqladmin ping` |
-| `{project}-redis` | `redis:7-alpine` | 6379 (interno) | `redis-cli ping` |
+| `{project}-nginx` | `nginx:1.27-alpine` | 80 (internal/local) | `wget /nginx-health` |
+| `{project}-php` | Custom WordPress + Redis | 9000 (internal) | `cgi-fcgi ping` |
+| `{project}-db` | `mysql:8.0` | 3306 (internal) | `mysqladmin ping` |
+| `{project}-redis` | `redis:7-alpine` | 6379 (internal) | `redis-cli ping` |
 
-## Requisitos
+## Requirements
 
 - Docker Engine 24+
 - Docker Compose v2
-- Nginx Proxy Manager (ya instalado)
-- Red Docker compartida con NPM (por defecto: `proxy`)
+- Nginx Proxy Manager (already installed on your server)
+- A shared Docker network with NPM (default: `proxy`)
 
-## Instalación
+## Installation
 
-### 1. Setup inicial
+### 1. Initial Setup
 
 ```bash
-# Generar .env con passwords seguros
+# Generate a .env file with secure, random passwords
 bash scripts/setup.sh
 ```
 
-### 2. Revisar configuración
+### 2. Review Configuration
 
 ```bash
-# Editar variables de entorno
+# Edit environment variables
 nano .env
 
-# Valores importantes a revisar:
-# - COMPOSE_PROJECT_NAME  → prefijo de contenedores
-# - PROXY_NETWORK         → red compartida con NPM
+# Important values to check:
+# - COMPOSE_PROJECT_NAME  → Container name prefix
+# - PROXY_NETWORK         → Shared network with NPM
+# - LOCAL_PORT            → Port to access locally (e.g., 8087). Leave commented in production.
 ```
 
-### 3. Build y arranque
+### 3. Build and Start
 
 ```bash
-# Construir y levantar
+# Build custom images and start containers in the background
 docker compose up -d --build
 
-# Verificar que todo está healthy
+# Verify that all containers are healthy
 docker compose ps
 ```
 
-### 4. Configurar en Nginx Proxy Manager
+### 4. Configure Nginx Proxy Manager
 
-1. Ir a NPM → **Proxy Hosts** → **Add Proxy Host**
-2. **Domain**: tu-dominio.com
-3. **Scheme**: http
-4. **Forward Hostname**: `{COMPOSE_PROJECT_NAME}-nginx` (ej: `wordpress-site-nginx`)
+1. Go to your NPM dashboard → **Proxy Hosts** → **Add Proxy Host**
+2. **Domain Names**: your-domain.com
+3. **Scheme**: `http`
+4. **Forward Hostname/IP**: `{COMPOSE_PROJECT_NAME}-nginx` (e.g., `wordpress-site-nginx`)
 5. **Forward Port**: `80`
-6. **SSL**: Let's Encrypt → Force SSL ✅
-7. **Advanced** → Custom Nginx Config (opcional):
+6. **SSL**: Let's Encrypt → Enable **Force SSL** ✅
+7. **Advanced** → Custom Nginx Configuration (optional):
    ```nginx
    proxy_set_header X-Forwarded-Proto $scheme;
    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
    proxy_set_header X-Real-IP $remote_addr;
    ```
+*(Note: NPM sends `X-Forwarded-Proto` by default, which triggers WordPress to securely force HTTPS on the backend).*
 
-## Comandos Útiles
+## Useful Commands
 
 ```bash
-# Ver logs en tiempo real
+# View real-time logs for all services
 docker compose logs -f
 
-# Logs de un servicio específico
+# Logs for a specific service
 docker compose logs -f wordpress
 
-# Shell en WordPress
+# Open a shell in the WordPress container
 docker compose exec wordpress bash
 
-# Shell en MySQL
+# Open a shell in MySQL
 docker compose exec mysql mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
 
-# Shell en Redis
+# Open a shell in Redis
 docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning
 
-# Reiniciar un servicio
+# Restart a specific service
 docker compose restart wordpress
 
-# Reconstruir WordPress (después de cambiar PHP config)
+# Rebuild WordPress (e.g., after changing PHP config)
 docker compose up -d --build wordpress
 
-# Ver estado de healthchecks
+# Check healthcheck status
 docker compose ps --format "table {{.Name}}\t{{.Status}}"
 ```
 
 ## Backups
 
 ```bash
-# Backup manual
+# Run a manual backup
 bash scripts/backup.sh
 
-# Backup automático (crontab)
+# Setup automated backups (crontab)
 crontab -e
-# Agregar: backup diario a las 3 AM
-0 3 * * * /ruta/completa/scripts/backup.sh >> /var/log/wp-backup.log 2>&1
+# Add this line to run daily backups at 3 AM:
+0 3 * * * /full/path/to/scripts/backup.sh >> /var/log/wp-backup.log 2>&1
 ```
 
-Los backups se guardan en `backups/` con rotación automática (últimos 7 por defecto).
+Backups are saved in the `backups/` directory with automatic rotation (keeps the latest 7 backups by default).
 
-## Estructura de Archivos
+## Directory Structure
 
 ```
 wordpress/
-├── .env.example              # Template de variables de entorno
-├── .env                      # Variables reales (NO commitear)
+├── .env.example              # Environment variables template
+├── .env                      # Real variables (DO NOT commit)
 ├── .gitignore
 ├── .dockerignore
-├── docker-compose.yml        # Orquestación de servicios
+├── docker-compose.yml        # Services orchestration
 ├── docker/
 │   ├── wordpress/
-│   │   ├── Dockerfile        # WordPress + Redis extension
-│   │   ├── php-custom.ini    # PHP production config
-│   │   └── www.conf          # PHP-FPM pool config
+│   │   ├── Dockerfile        # Custom WordPress + Redis PHP extension
+│   │   ├── php-custom.ini    # PHP production configuration
+│   │   └── www.conf          # PHP-FPM pool configuration
 │   ├── nginx/
-│   │   ├── nginx.conf        # Nginx principal
+│   │   ├── nginx.conf        # Main Nginx configuration
 │   │   └── conf.d/
-│   │       ├── wordpress.conf       # Virtual host
-│   │       └── security-headers.conf # Headers HTTP
+│   │       ├── wordpress.conf       # Virtual host for WP
+│   │       └── security-headers.conf # Security HTTP headers
 │   ├── mysql/
-│   │   └── custom.cnf        # MySQL optimizado
+│   │   └── custom.cnf        # Optimized MySQL settings
 │   └── redis/
-│       └── redis.conf        # Redis configuración
+│       └── redis.conf        # Redis cache configuration
 ├── scripts/
-│   ├── setup.sh              # Inicialización del proyecto
-│   └── backup.sh             # Backups automatizados
-├── backups/                  # Directorio de backups
+│   ├── setup.sh              # Project initialization script
+│   └── backup.sh             # Automated backup script
+├── backups/                  # Backup storage directory
 └── README.md
 ```
 
-## Seguridad
+## Security Features
 
-- ✅ Credenciales en `.env`, nunca hardcodeadas
-- ✅ MySQL y Redis sin puertos expuestos al host
-- ✅ Headers HTTP de seguridad (CSP, X-Frame-Options, etc.)
-- ✅ `xmlrpc.php` bloqueado
-- ✅ PHP en `wp-content/uploads/` bloqueado
-- ✅ Rate limiting en `wp-login.php`
-- ✅ Contenedores con `no-new-privileges` y `cap_drop: ALL`
-- ✅ Redis: comandos peligrosos deshabilitados
-- ✅ MySQL: `local-infile` deshabilitado
+- ✅ Credentials stored safely in `.env`, no hardcoded secrets
+- ✅ MySQL and Redis ports are NOT exposed to the host machine
+- ✅ HTTP Security Headers enabled (CSP, X-Frame-Options, etc.)
+- ✅ `xmlrpc.php` access blocked at the Nginx level
+- ✅ PHP execution blocked inside `wp-content/uploads/`
+- ✅ Rate limiting enabled on `wp-login.php` to prevent brute force
+- ✅ Containers hardened using `no-new-privileges` and `cap_drop: ALL` (with minimal required `cap_add`)
+- ✅ Redis: Dangerous commands (`FLUSHALL`, `CONFIG`, `DEBUG`) are disabled
+- ✅ MySQL: `local-infile` is disabled
 - ✅ PHP: `expose_php = Off`, `display_errors = Off`
-- ✅ OPcache habilitado para producción
-- ✅ Logs con rotación automática (json-file, max 10m × 3)
+- ✅ OPcache enabled and tuned for production performance
+- ✅ Automated log rotation (json-file, max 10m × 3 files)
+- ✅ Auto-detects reverse proxies to seamlessly force `HTTPS` for admin pages
 
-## Plugin Redis Object Cache
+## Redis Object Cache Plugin
 
-Después del primer arranque, instalar el plugin de Redis:
+After the first startup, you must install the Redis plugin to activate caching:
 
-1. Ir a WordPress Admin → Plugins → Añadir nuevo
-2. Buscar **"Redis Object Cache"** por Till Krüss
-3. Instalar y activar
-4. Ir a **Settings → Redis** → Click **"Enable Object Cache"**
+1. Go to WordPress Admin → **Plugins** → **Add New Plugin**
+2. Search for **"Redis Object Cache"** (by Till Krüss)
+3. Install and Activate
+4. Go to **Settings → Redis** → Click **"Enable Object Cache"**
 
 ## Troubleshooting
 
-### Contenedor no arranca
+### Container won't start
 
 ```bash
-docker compose logs <servicio>
-docker inspect <contenedor> --format='{{.State.Health}}'
+docker compose logs <service_name>
+docker inspect <container_name> --format='{{.State.Health}}'
 ```
 
-### WordPress no conecta a la base de datos
+### WordPress cannot connect to the database
 
 ```bash
-# Verificar que MySQL está healthy
+# Verify that MySQL is healthy
 docker compose ps mysql
 
-# Probar conexión manual
+# Test connection manually from the PHP container
 docker compose exec wordpress php -r "
   \$pdo = new PDO(
     'mysql:host=mysql;dbname=' . getenv('WORDPRESS_DB_NAME'),
     getenv('WORDPRESS_DB_USER'),
     getenv('WORDPRESS_DB_PASSWORD')
   );
-  echo 'Conexión exitosa';
+  echo 'Connection successful!';
 "
 ```
 
-### Redis no conecta
+### Redis cannot connect
 
 ```bash
 docker compose exec redis redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping
-# Debe responder: PONG
+# It should respond with: PONG
 ```
