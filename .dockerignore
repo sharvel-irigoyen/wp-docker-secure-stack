@@ -1,0 +1,14 @@
+# Ignore everything not needed in Docker build context
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+README.md
+LICENSE
+backups/
+logs/
+scripts/
+docker-compose.yml
+docker-compose.override.yml
+*.md

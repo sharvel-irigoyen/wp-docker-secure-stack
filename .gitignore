@@ -1,0 +1,29 @@
+# ── Environment ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Docker Volumes (if local) ────────────────────────────────
+mysql_data/
+redis_data/
+wordpress_data/
+
+# ── Backups ──────────────────────────────────────────────────
+backups/
+
+# ── OS & IDE ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# ── Logs ─────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── WordPress uploads (optional: uncomment if tracking in git)
+# wp-content/uploads/

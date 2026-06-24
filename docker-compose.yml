@@ -1,0 +1,208 @@
+# ============================================================================
+# WordPress Docker Infrastructure - Production Ready
+# ============================================================================
+# All sensitive values come from .env - run: bash scripts/setup.sh
+# ============================================================================
+
+services:
+  # ── Nginx (Internal Reverse Proxy → NPM handles SSL/domain) ──────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-nginx
+    restart: unless-stopped
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - wordpress_data:/var/www/html:ro
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    networks:
+      - proxy
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.50"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── WordPress PHP-FPM (Custom image with Redis extension) ─────────────────
+  wordpress:
+    build:
+      context: ./docker/wordpress
+      dockerfile: Dockerfile
+      args:
+        WORDPRESS_VERSION: ${WORDPRESS_VERSION:-6-php8.3-fpm-alpine}
+    container_name: ${COMPOSE_PROJECT_NAME}-php
+    restart: unless-stopped
+    environment:
+      WORDPRESS_DB_HOST: ${WORDPRESS_DB_HOST:-mysql}
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
+      WORDPRESS_TABLE_PREFIX: ${WORDPRESS_TABLE_PREFIX:-wp_}
+      WORDPRESS_DEBUG: ${WORDPRESS_DEBUG:-false}
+      WORDPRESS_CONFIG_EXTRA: |
+        /* Redis Object Cache */
+        define('WP_REDIS_HOST', 'redis');
+        define('WP_REDIS_PORT', 6379);
+        define('WP_REDIS_PASSWORD', '${REDIS_PASSWORD}');
+        define('WP_REDIS_DATABASE', 0);
+        define('WP_REDIS_TIMEOUT', 1);
+        define('WP_REDIS_READ_TIMEOUT', 1);
+        /* Security Hardening */
+        define('DISALLOW_FILE_EDIT', true);
+        define('WP_AUTO_UPDATE_CORE', 'minor');
+        define('FORCE_SSL_ADMIN', true);
+        /* Reverse Proxy SSL Detection (NPM → Nginx → WordPress) */
+        if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && strpos($$_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false) {
+            $$_SERVER['HTTPS'] = 'on';
+        }
+        /* Performance */
+        define('WP_MEMORY_LIMIT', '256M');
+        define('WP_MAX_MEMORY_LIMIT', '512M');
+        /* Disable XML-RPC */
+        add_filter('xmlrpc_enabled', '__return_false');
+    volumes:
+      - wordpress_data:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.00"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── MySQL 8.0 (Database) ──────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: ${COMPOSE_PROJECT_NAME}-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - SYS_NICE
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.00"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis 7 (Object Cache) ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}-redis
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.50"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ── Volumes (Persistent, named) ────────────────────────────────────────────
+volumes:
+  wordpress_data:
+    name: ${COMPOSE_PROJECT_NAME}_wordpress_data
+  mysql_data:
+    name: ${COMPOSE_PROJECT_NAME}_mysql_data
+  redis_data:
+    name: ${COMPOSE_PROJECT_NAME}_redis_data
+
+# ── Networks ───────────────────────────────────────────────────────────────
+networks:
+  # External: shared with Nginx Proxy Manager
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}
+  # Internal: isolated backend communication
+  backend:
+    driver: bridge
+    name: ${COMPOSE_PROJECT_NAME}_backend
