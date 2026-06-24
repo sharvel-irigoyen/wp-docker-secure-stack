@@ -17,6 +17,9 @@ services:
     depends_on:
       wordpress:
         condition: service_healthy
+    ports:
+      # Expone el puerto localmente (definido en .env). Seguro en prod si se usa 127.0.0.1
+      - "${LOCAL_PORT:-127.0.0.1:8080}:80"
     networks:
       - proxy
       - backend
