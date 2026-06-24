@@ -77,10 +77,10 @@ services:
         /* Security Hardening */
         define('DISALLOW_FILE_EDIT', true);
         define('WP_AUTO_UPDATE_CORE', 'minor');
-        define('FORCE_SSL_ADMIN', true);
         /* Reverse Proxy SSL Detection (NPM → Nginx → WordPress) */
         if (isset($$_SERVER['HTTP_X_FORWARDED_PROTO']) && strpos($$_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false) {
             $$_SERVER['HTTPS'] = 'on';
+            define('FORCE_SSL_ADMIN', true);
         }
         /* Performance */
         define('WP_MEMORY_LIMIT', '256M');
