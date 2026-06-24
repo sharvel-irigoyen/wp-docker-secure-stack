@@ -85,6 +85,10 @@ services:
         /* Performance */
         define('WP_MEMORY_LIMIT', '256M');
         define('WP_MAX_MEMORY_LIMIT', '512M');
+        /* Error Handling — never show errors on frontend */
+        define('WP_DEBUG_DISPLAY', false);
+        define('WP_DEBUG_LOG', true);
+        @ini_set('display_errors', 0);
         /* Disable XML-RPC */
         // Disabled in Nginx config instead to avoid fatal error here
     volumes:
