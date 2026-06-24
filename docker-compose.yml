@@ -24,7 +24,7 @@ services:
       - proxy
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost/nginx-health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1/nginx-health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -86,7 +86,7 @@ services:
         define('WP_MEMORY_LIMIT', '256M');
         define('WP_MAX_MEMORY_LIMIT', '512M');
         /* Disable XML-RPC */
-        add_filter('xmlrpc_enabled', '__return_false');
+        // Disabled in Nginx config instead to avoid fatal error here
     volumes:
       - wordpress_data:/var/www/html
     depends_on:
